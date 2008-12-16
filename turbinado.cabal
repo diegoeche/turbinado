@@ -33,7 +33,7 @@ Executable turbinado
             UndecidableInstances,
             PatternGuards,
             MultiParamTypeClasses,
-            PatternSignatures,
+            ScopedTypeVariables
             DeriveDataTypeable
 
 

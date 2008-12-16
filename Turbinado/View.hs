@@ -25,7 +25,7 @@ module Turbinado.View (
         module Turbinado.Environment.ViewData
         ) where
 
-import Control.Exception (catchDyn)
+import Control.OldException (catchDyn)
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Trans (MonadIO(..))

@@ -14,6 +14,7 @@ import System.Log.Logger
 
 -- Your favorite HDBC driver
 import Database.HDBC.PostgreSQL
+import Database.HDBC
 
 ----------------------------------------------------------------
 -- Environment settings
@@ -29,7 +30,8 @@ newAppEnvironment = AppEnvironment
 ----------------------------------------------------------------
 databaseConnection :: Maybe (IO Connection)
 -- databaseConnection = Nothing
-databaseConnection = Just $ connectPostgreSQL "host=localhost dbname=turbinado user=turbinado password=turbinado"
+databaseConnection = Just $ handleSqlError 
+                     $ connectPostgreSQL "host=localhost dbname=turbinado user=postgres password=12457890"
 
 ----------------------------------------------------------------
 -- RequestHandler Filter List additions
