@@ -31,25 +31,25 @@ import Turbinado.Environment.Logger
 import Turbinado.Environment.Types
 import Turbinado.Environment.Request
 import Turbinado.Environment.Response
-import Turbinado.View.Monad hiding (doIO)
+import Turbinado.View.Monad hiding (liftIO)
 import Turbinado.View.XML
 import Turbinado.Controller.Monad
 
 -- | Create a new store for Code data
-addCodeStoreToEnvironment :: Controller ()
-addCodeStoreToEnvironment = do e <- get
-                               mv <- doIO $ newMVar $ empty
-                               put $ e {getCodeStore = Just $ CodeStore mv}
+addCodeStoreToEnvironment :: (HasEnvironment m) => m ()
+addCodeStoreToEnvironment = do e <- getEnvironment
+                               mv <- liftIO $ newMVar $ empty
+                               setEnvironment $ e {getCodeStore = Just $ CodeStore mv}
 
-retrieveCode :: CodeType -> CodeLocation -> Controller CodeStatus
+retrieveCode :: (HasEnvironment m) => CodeType -> CodeLocation -> m CodeStatus
 retrieveCode ct cl' = do
-    e <- get
+    e <- getEnvironment
     let (CodeStore mv) = fromJust $ getCodeStore e
         path  = getDir ct
     cl <- do -- d <- getCurrentDirectory 
              return (addExtension (joinPath $ map normalise [{- d, -} path, dropExtension $ fst cl']) "hs", snd cl')
     debugM $ "  CodeStore : retrieveCode : loading   " ++ (fst cl) ++ " - " ++ (snd cl)
-    cmap <- doIO $ takeMVar mv
+    cmap <- liftIO $ takeMVar mv
     let c= lookup cl cmap
     cmap' <- case c of
                Nothing                  -> do debugM ((fst cl) ++ " : " ++ (snd cl) ++ " : fresh load")
@@ -58,20 +58,26 @@ retrieveCode ct cl' = do
                                               loadCode ct cmap cl
                _                        -> do debugM ((fst cl) ++ " : " ++ (snd cl) ++ " : checking reload") 
                                               checkReloadCode ct cmap (fromJust c) cl
-    doIO $ putMVar mv cmap'
+    liftIO $ putMVar mv cmap'
     -- We _definitely_ have a code entry now, though it may have a MakeFailure
     let c' = lookup cl cmap'
     case c' of
         Nothing                             -> do debugM (fst cl ++ " : Not found in CodeStore") 
-                                                  return (CodeLoadFailure (fst cl ++ " : Not found in CodeStore") )
+                                                  return  CodeLoadMissing
+        Just CodeLoadMissing                -> do debugM (fst cl ++ " : Not found in CodeStore") 
+                                                  return  CodeLoadMissing
         Just (CodeLoadFailure e)            -> do debugM (fst cl ++ " : CodeLoadFailure " ) 
                                                   return (CodeLoadFailure e)
         Just clc@(CodeLoadController _ _ _) -> do debugM (fst cl ++ " : CodeLoadController " ) 
                                                   return clc  
         Just clv@(CodeLoadView       _ _ _) -> do debugM (fst cl ++ " : CodeLoadView" ) 
                                                   return clv
+        Just clc@(CodeLoadComponentController _ _ _) -> do debugM (fst cl ++ " : CodeLoadComponentController " ) 
+                                                           return clc  
+        Just clv@(CodeLoadComponentView       _ _ _) -> do debugM (fst cl ++ " : CodeLoadComponentView" ) 
+                                                           return clv
         
-checkReloadCode :: CodeType -> CodeMap -> CodeStatus -> CodeLocation -> Controller CodeMap
+checkReloadCode :: (HasEnvironment m) => CodeType -> CodeMap -> CodeStatus -> CodeLocation -> m CodeMap
 checkReloadCode ct cmap (CodeLoadFailure e) cl = error "ERROR: checkReloadCode was called with a CodeLoadFailure"
 checkReloadCode ct cmap cstat cl = do
     debugM $ "    CodeStore : checkReloadCode : loading   " ++ (fst cl) ++ " - " ++ (snd cl)
@@ -84,15 +90,15 @@ checkReloadCode ct cmap cstat cl = do
         
 -- The beast
 -- In cases of Merge, Make or Load failures leave the original files in place and log the error
-loadCode :: CodeType -> CodeMap -> CodeLocation -> Controller CodeMap
+loadCode :: (HasEnvironment m) => CodeType -> CodeMap -> CodeLocation -> m CodeMap
 loadCode ct cmap cl = do
     debugM $ "\tCodeStore : loadCode : loading   " ++ (fst cl) ++ " - " ++ (snd cl)
-    fe <- doIO $ doesFileExist $ fst cl
+    fe <- liftIO $ doesFileExist $ fst cl
     case fe of 
         False -> debugM ("\tFile not found: " ++ fst cl) >> return cmap 
         True  -> mergeCode ct cmap cl
         
-mergeCode :: CodeType -> CodeMap -> CodeLocation -> Controller CodeMap
+mergeCode :: (HasEnvironment m) => CodeType -> CodeMap -> CodeLocation -> m CodeMap
 mergeCode ct cmap cl = do
   debugM ("\t Dummy merge : " )
   makeCode ct cmap cl [] ""
@@ -105,7 +111,7 @@ mergeCode ct cmap cl = do
 -- MergeSuccess _      args fp -> do debugM ("\tMerge success : " ++ (fst cl)) 
 --                                   makeCode ct cmap cl args fp
         
-makeCode :: CodeType -> CodeMap -> CodeLocation -> [Arg] -> FilePath -> Controller CodeMap
+makeCode :: (HasEnvironment m) => CodeType -> CodeMap -> CodeLocation -> [Arg] -> FilePath -> m CodeMap
 makeCode ct cmap cl args fp = do
   case ct of
     CTController -> _loadController ct cmap cl fp
@@ -230,29 +236,33 @@ controller =
 --                 return $ MergeSuccess ReComp [] outFile -- must have recreated file
  
 
-needReloadCode :: FilePath -> CodeDate -> Controller Bool
+needReloadCode :: (HasEnvironment m) => FilePath -> CodeDate -> m (Bool, Bool)
 needReloadCode fp fd = do
-    fe <- doIO $ doesFileExist fp
+    fe <- liftIO $ doesFileExist fp
     case fe of
-        True -> do mt <- doIO $ getModificationTime fp    
-                   return $ mt > fd
-        False-> return True
-
-snd' :: (a, b, c) -> b
-snd' (a,b,c) = b
+        True -> do mt <- liftIO $ getModificationTime fp    
+                   return $ (True, mt > fd)
+        False-> return (False, True)
 
 getDir :: CodeType -> FilePath
 getDir ct = case ct of
-  CTLayout     -> layoutDir
-  CTController -> controllerDir
-  CTView       -> viewDir
+  CTLayout         -> layoutDir
+  CTController     -> controllerDir
+  CTView           -> viewDir
+  CTComponentController -> componentControllerDir
+  CTComponentView       -> componentViewDir
 
 getStub :: CodeType -> FilePath
 getStub ct = case ct of
-  CTLayout     -> layoutStub
-  CTController -> controllerStub
-  CTView       -> viewStub
+  CTLayout         -> layoutStub
+  CTController     -> controllerStub
+  CTView           -> viewStub
+  CTComponentController -> controllerStub
+  CTComponentView       -> viewStub
 
+getDate (CodeLoadMissing) = error "getDate called with CodeLoadMissing"
 getDate (CodeLoadFailure e) = error "getDate called with CodeLoadFailure"
 getDate (CodeLoadView       _ _ d) = d
 getDate (CodeLoadController _ _ d) = d
+getDate (CodeLoadComponentView       _ _ d) = d
+getDate (CodeLoadComponentController _ _ d) = d
