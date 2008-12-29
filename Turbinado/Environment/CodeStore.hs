@@ -2,7 +2,7 @@ module Turbinado.Environment.CodeStore (
     addCodeStoreToEnvironment,
     retrieveCode,
     ) where
-
+import Control.Monad.State
 import Control.Concurrent.MVar
 import Control.Exception ( catch, throwIO)
 import Control.Monad ( when, foldM)
@@ -15,8 +15,14 @@ import Prelude hiding (lookup,catch)
 import System.Directory
 import System.FilePath
 import System.IO
-import System.Plugins
-import System.Plugins.Utils
+
+import GHC
+import GHC.Paths
+import DynFlags
+import Unsafe.Coerce
+
+-- import System.Plugins
+-- import System.Plugins.Utils
 import System.Time
 
 import Config.Master
@@ -98,98 +104,147 @@ loadCode ct cmap cl = do
         
 mergeCode :: (HasEnvironment m) => CodeType -> CodeMap -> CodeLocation -> m CodeMap
 mergeCode ct cmap cl = do
-    debugM $ "\tMerging " ++ (fst cl)
+    debugM $ "\tDummy Merging " ++ (fst cl)
     -- d <- getCurrentDirectory
     --debugM $ "  stub " ++ joinPath [normalise d, normalise $ getStub ct]
-    ms <- customMergeToDir (joinPath [{-normalise d,-} normalise $ getStub ct]) (fst cl) compiledDir
-    case ms of
-        MergeFailure err            -> do debugM ("\tMerge error : " ++ (show err))
-                                          return $ insert cl (CodeLoadFailure $ unlines err) cmap
-        MergeSuccess NotReq _    _  -> do debugM ("\tMerge success (No recompilation required) : " ++ (fst cl)) 
-                                          return cmap
-        MergeSuccess _      args fp -> do debugM ("\tMerge success : " ++ (fst cl)) 
-                                          makeCode ct cmap cl args fp
+    makeCode ct cmap cl ""
+    -- ms <- customMergeToDir (joinPath [{-normalise d,-} normalise $ getStub ct]) (fst cl) compiledDir
+    -- case ms of
+    --     MergeFailure err            -> do debugM ("\tMerge error : " ++ (show err))
+    --                                       return $ insert cl (CodeLoadFailure $ unlines err) cmap
+    --     MergeSuccess NotReq _    _  -> do debugM ("\tMerge success (No recompilation required) : " ++ (fst cl)) 
+    --                                       return cmap
+    --     MergeSuccess _      args fp -> do debugM ("\tMerge success : " ++ (fst cl)) 
+    --                                      makeCode ct cmap cl args fp
         
-makeCode :: (HasEnvironment m) => CodeType -> CodeMap -> CodeLocation -> [Arg] -> FilePath -> m CodeMap
-makeCode ct cmap cl args fp = do
-    ms <- liftIO $ makeAll fp (compileArgs++args)
-    debugM ("\tMaking: " ++ (fp)) 
-    case ms of
-        MakeFailure err       -> do debugM ("\tMake error : " ++ (show err)) 
-                                    return (insert cl (CodeLoadFailure $ unlines err) cmap)
-        MakeSuccess NotReq _  -> do debugM ("\tMake success : No recomp required") 
-                                    return cmap
-        MakeSuccess _      fp -> do debugM ("\tMake success : " ++ fp)
-                                    case ct of
-                                      CTLayout                -> _loadView ct cmap cl fp
-                                      CTView                  -> _loadView ct cmap cl fp
-                                      CTComponentView         -> _loadView ct cmap cl fp
-                                      CTController            -> _loadController ct cmap cl fp
-                                      CTComponentController   -> _loadController ct cmap cl fp
+--makeCode :: (HasEnvironment m) => CodeType -> CodeMap -> CodeLocation -> [Arg] -> FilePath -> m CodeMap
+makeCode :: (HasEnvironment m) => CodeType -> CodeMap -> CodeLocation -> FilePath -> m CodeMap
+makeCode ct cmap cl fp = do
+    -- ms <- liftIO $ makeAll fp (compileArgs++args)
+    debugM ("\tDummy Making: " ++ (fp)) 
+    case ct of
+      CTLayout                -> _loadView ct cmap cl fp
+      CTView                  -> _loadView ct cmap cl fp
+      CTComponentView         -> _loadView ct cmap cl fp
+      CTController            -> _loadController ct cmap cl fp
+      CTComponentController   -> _loadController ct cmap cl fp
+
 
 _loadView :: (HasEnvironment m) => CodeType -> CodeMap -> CodeLocation -> FilePath -> m CodeMap
 _loadView ct cmap cl fp = do
     debugM ("_load : " ++ (show ct) ++ " : " ++ (fst cl) ++ " : " ++ (snd cl))
-    ls <- liftIO $ load_ fp [compiledDir] (snd cl)
-    case ls of 
-        LoadFailure err -> do debugM ("LoadFailure : " ++ (show err)) 
-                              return (insert cl (CodeLoadFailure $ unlines err) cmap)
-        LoadSuccess m f -> do debugM ("LoadSuccess : " ++ fst cl )
-                              liftIO $ unload m
-                              t <- liftIO $ getClockTime
-                              case ct of
-                                CTLayout              -> return (insert cl (CodeLoadView f m t) cmap)
-                                CTView                -> return (insert cl (CodeLoadView f m t) cmap)
-                                CTComponentView       -> return (insert cl (CodeLoadComponentView f m t) cmap)
-                                _                     -> error $ "_loadView: passed an invalid CodeType (" ++ (show ct) ++ ")"
+    error $ "Not implemented yet"
+    -- here goes the ghc api call 
+    -- ls <- liftIO $ load_ fp [compiledDir] (snd cl)
+    -- case ct of
+    --   CTLayout              -> return (insert cl (CodeLoadView f m t) cmap)
+    --   CTView                -> return (insert cl (CodeLoadView f m t) cmap)
+    --   CTComponentView       -> return (insert cl (CodeLoadComponentView f m t) cmap)
+    --   _                     -> error $ "_loadView: passed an invalid CodeType (" ++ (show ct) ++ ")"
+
+
+    -- case ls of 
+    --     LoadFailure err -> do debugM ("LoadFailure : " ++ (show err)) 
+    --                           return (insert cl (CodeLoadFailure $ unlines err) cmap)
+    --     LoadSuccess m f -> do debugM ("LoadSuccess : " ++ fst cl )
+    --                           liftIO $ unload m
+    --                           t <- liftIO $ getClockTime
+    --                           case ct of
+    --                             CTLayout              -> return (insert cl (CodeLoadView f m t) cmap)
+    --                             CTView                -> return (insert cl (CodeLoadView f m t) cmap)
+    --                             CTComponentView       -> return (insert cl (CodeLoadComponentView f m t) cmap)
+    --                             _                     -> error $ "_loadView: passed an invalid CodeType (" ++ (show ct) ++ ")"
 
 _loadController :: (HasEnvironment m) => CodeType -> CodeMap -> CodeLocation -> FilePath -> m CodeMap
 _loadController ct cmap cl fp = do
     debugM ("_load : " ++ (show ct) ++ " : " ++ (fst cl) ++ " : " ++ (snd cl))
-    ls <- liftIO $ load_ fp [compiledDir] (snd cl)
-    case ls of 
-        LoadFailure err -> do debugM ("LoadFailure : " ++ (show err)) 
-                              return (insert cl (CodeLoadFailure $ unlines err) cmap)
-        LoadSuccess m f -> do debugM ("LoadSuccess : " ++ fst cl )
-                              liftIO $ unload m
-                              t <- liftIO $ getClockTime
-                              case ct of
-                                CTController          -> return (insert cl (CodeLoadController f m t) cmap)
-                                CTComponentController -> return (insert cl (CodeLoadComponentController f m t) cmap)
-                                _                     -> error $ "_loadController: passed an invalid CodeType (" ++ (show ct) ++ ")"
+    (f,m) <- (liftIO $ load_ (fst cl) (snd cl)) 
+    t <- liftIO $ getClockTime          
+    case ct of
+       CTController          -> return (insert cl (CodeLoadController f m t) cmap)
+       CTComponentController -> return (insert cl (CodeLoadComponentController f m t) cmap)
+       _                     -> error $ "_loadController: passed an invalid CodeType (" ++ (show ct) ++ ")"
+    
+    
+    -- ls <- liftIO $ load_ fp [compiledDir] (snd cl)
+    -- case ls of 
+    --     LoadFailure err -> do debugM ("LoadFailure : " ++ (show err)) 
+    --                           return (insert cl (CodeLoadFailure $ unlines err) cmap)
+    --     LoadSuccess m f -> do debugM ("LoadSuccess : " ++ fst cl )
+    --                           liftIO $ unload m
+    --                           t <- liftIO $ getClockTime
+    --                           case ct of
+    --                             CTController          -> return (insert cl (CodeLoadController f m t) cmap)
+    --                             CTComponentController -> return (insert cl (CodeLoadComponentController f m t) cmap)
+    --                             _                     -> error $ "_loadController: passed an invalid CodeType (" ++ (show ct) ++ ")"
                               
 
 -------------------------------------------------------------------------------------------------
 -- Utility functions
 -------------------------------------------------------------------------------------------------
 
--- Custom merge function because I don't want to have to use a custom
--- version of Plugins (with HSX enabled)
-customMergeToDir :: (HasEnvironment m) => FilePath -> FilePath -> FilePath -> m MergeStatus
-customMergeToDir stb src dir = do
-    src_exists <- liftIO $ doesFileExist src
-    stb_exists <- liftIO $ doesFileExist stb
-    debugM  $ "\tMerging': " ++ (show [dir, makeRelative rootDir src])
-    let src' = makeRelative rootDir src
-        outFile = joinPath [combine rootDir dir, src']
-        outDir  = joinPath $ init $ splitDirectories outFile
-        outMod  = concat $ intersperse "." $ splitDirectories $ dropExtension src'
-        outTitle = "module " ++ outMod ++ " where \n\n"    
-    case (src_exists, stb_exists) of
-        (False, _) -> return $ 
-                MergeFailure ["Source file does not exist : "++src]
-        (_, False) -> return $ 
-                MergeFailure ["Source file does not exist : "++stb]
-        _          -> do
-                src_str <- liftIO $ readFile src
-                stb_str <- liftIO $ readFile stb
-                let (stbimps, stbdecls) = span ( not . isPrefixOf "-- SPLIT HERE") $ lines stb_str
-                    mrg_str = outTitle ++ (unlines stbimps) ++ src_str ++ (unlines stbdecls)
-                liftIO $ createDirectoryIfMissing True outDir
-                hdl <- liftIO $ openFile outFile WriteMode  -- overwrite!
-                liftIO $ hPutStr hdl mrg_str 
-                liftIO $ hClose hdl
-                return $ MergeSuccess ReComp [] outFile -- must have recreated file
+--- Loads the module from the given path and given name 
+--- within the GhcMonad.
+--                       Path      Module   
+moduleM :: GhcMonad m => String -> String -> m Module
+moduleM p mod = do 
+  dflags <- getSessionDynFlags
+  setSessionDynFlags dflags
+  target <- guessTarget p Nothing
+  addTarget target
+  r <- load LoadAllTargets
+  case r of
+    Failed -> error "Compilation failed"
+    Succeeded -> do
+           findModule (mkModuleName mod) Nothing
+
+--- Loads the function in the given module 
+--- within the GhcMonad.
+--- Any alternative to unsafeCoerce?
+functionByNameM :: GhcMonad m => String -> Module -> m (a)
+functionByNameM name mod = do
+  setContext [] [mod]
+  f <- compileExpr (name)
+  do let value' = (unsafeCoerce f) :: a
+     return value'
+
+load_ :: FilePath -> String -> IO (a,Module)
+load_ fp name = 
+    defaultErrorHandler defaultDynFlags $ do
+       func <- runGhc (Just libdir) $ do 
+                 m <- moduleM fp (dropExtension . takeFileName $ fp) -- The module
+                 f <- (functionByNameM name m )::(GhcMonad m => m a) -- The function
+                 return (f,m)
+       return func 
+
+-- We won't be using this.
+-- -- Custom merge function because I don't want to have to use a custom
+-- -- version of Plugins (with HSX enabled)
+-- customMergeToDir :: (HasEnvironment m) => FilePath -> FilePath -> FilePath -> m MergeStatus
+-- customMergeToDir stb src dir = do
+--     src_exists <- liftIO $ doesFileExist src
+--     stb_exists <- liftIO $ doesFileExist stb
+--     debugM  $ "\tMerging': " ++ (show [dir, makeRelative rootDir src])
+--     let src' = makeRelative rootDir src
+--         outFile = joinPath [combine rootDir dir, src']
+--         outDir  = joinPath $ init $ splitDirectories outFile
+--         outMod  = concat $ intersperse "." $ splitDirectories $ dropExtension src'
+--         outTitle = "module " ++ outMod ++ " where \n\n"    
+--     case (src_exists, stb_exists) of
+--         (False, _) -> return $ 
+--                 MergeFailure ["Source file does not exist : "++src]
+--         (_, False) -> return $ 
+--                 MergeFailure ["Source file does not exist : "++stb]
+--         _          -> do
+--                 src_str <- liftIO $ readFile src
+--                 stb_str <- liftIO $ readFile stb
+--                 let (stbimps, stbdecls) = span ( not . isPrefixOf "-- SPLIT HERE") $ lines stb_str
+--                     mrg_str = outTitle ++ (unlines stbimps) ++ src_str ++ (unlines stbdecls)
+--                 liftIO $ createDirectoryIfMissing True outDir
+--                 hdl <- liftIO $ openFile outFile WriteMode  -- overwrite!
+--                 liftIO $ hPutStr hdl mrg_str 
+--                 liftIO $ hClose hdl
+--                 return $ MergeSuccess ReComp [] outFile -- must have recreated file
  
 
 needReloadCode :: (HasEnvironment m) => FilePath -> CodeDate -> m (Bool, Bool)

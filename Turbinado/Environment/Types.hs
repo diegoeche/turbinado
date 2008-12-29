@@ -14,7 +14,7 @@ import HSX.XMLGenerator (XMLGenT(..), unXMLGenT)
 import Turbinado.View.XML
 import Config.Master
 import System.Time
-import System.Plugins
+import GHC
 
 class (MonadIO m) => HasEnvironment m where
   getEnvironment :: m Environment
