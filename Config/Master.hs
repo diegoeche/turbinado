@@ -11,8 +11,8 @@ import Config.App
 
 compileArgs =
         [ "-fglasgow-exts"
-        , "-fallow-overlapping-instances"
-        , "-fallow-undecidable-instances"
+        , "-XOverlappingInstances"
+        , "-XUndecidableInstances"
         , "-F", "-pgmFtrhsx"
         , "-fno-warn-overlapping-patterns" 
         , "-odir " ++ compiledDir

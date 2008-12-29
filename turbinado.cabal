@@ -16,8 +16,8 @@ Executable trhaml
 
 Executable turbinado
   Main-is:             Turbinado/Server.hs
-  Build-Depends:       base, bytestring, containers, directory, filepath, harp, HDBC, HDBC-postgresql, hslogger, hsx, HTTP, mtl, network, old-locale, old-time, parsec, plugins, pretty, regex-compat, time
-  ghc-options: -F -pgmFtrhsx -O
+  Build-Depends:       base, ghc, ghc-paths, bytestring, containers, directory, filepath, harp, HDBC, HDBC-postgresql, hslogger, hsx, HTTP, mtl, network, old-locale, old-time, parsec, plugins, pretty, regex-compat, time
+  ghc-options:  -O
   Extensions: MultiParamTypeClasses,
             FunctionalDependencies,
             TypeFamilies,

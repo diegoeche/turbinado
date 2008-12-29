@@ -15,7 +15,12 @@ import Prelude hiding (lookup,catch)
 import System.Directory
 import System.FilePath
 import System.IO
-import System.Plugins
+--import System.Plugins
+import GHC
+import GHC.Paths
+import DynFlags
+import Unsafe.Coerce
+
 import System.Plugins.Utils
 import System.Time
 
@@ -76,7 +81,6 @@ checkReloadCode ct cmap cstat cl = do
                     return cmap
         True  -> do debugM $ "    CodeStore : checkReloadCode : Need reload"
                     loadCode ct cmap cl
-
         
 -- The beast
 -- In cases of Merge, Make or Load failures leave the original files in place and log the error
@@ -90,85 +94,140 @@ loadCode ct cmap cl = do
         
 mergeCode :: CodeType -> CodeMap -> CodeLocation -> Controller CodeMap
 mergeCode ct cmap cl = do
-    debugM $ "\tMerging " ++ (fst cl)
-    -- d <- getCurrentDirectory
-    --debugM $ "  stub " ++ joinPath [normalise d, normalise $ getStub ct]
-    ms <- customMergeToDir (joinPath [{-normalise d,-} normalise $ getStub ct]) (fst cl) compiledDir
-    case ms of
-        MergeFailure err            -> do debugM ("\tMerge error : " ++ (show err))
-                                          return $ insert cl (CodeLoadFailure $ unlines err) cmap
-        MergeSuccess NotReq _    _  -> do debugM ("\tMerge success (No recompilation required) : " ++ (fst cl)) 
-                                          return cmap
-        MergeSuccess _      args fp -> do debugM ("\tMerge success : " ++ (fst cl)) 
-                                          makeCode ct cmap cl args fp
+  debugM ("\t Dummy merge : " )
+  makeCode ct cmap cl [] ""
+
+-- Not using plugins
+-- MergeFailure err            -> do debugM ("\tMerge error : " ++ (show err))
+--                                   return $ insert cl (CodeLoadFailure $ unlines err) cmap
+-- MergeSuccess NotReq _    _  -> do debugM ("\tMerge success (No recompilation required) : " ++ (fst cl)) 
+--                                   return cmap
+-- MergeSuccess _      args fp -> do debugM ("\tMerge success : " ++ (fst cl)) 
+--                                   makeCode ct cmap cl args fp
         
 makeCode :: CodeType -> CodeMap -> CodeLocation -> [Arg] -> FilePath -> Controller CodeMap
 makeCode ct cmap cl args fp = do
-    ms <- doIO $ makeAll fp (compileArgs++args)
-    case ms of
-        MakeFailure err       -> do debugM ("\tMake error : " ++ (show err)) 
-                                    return (insert cl (CodeLoadFailure $ unlines err) cmap)
-        MakeSuccess NotReq _  -> do debugM ("\tMake success : No recomp required") 
-                                    return cmap
-        MakeSuccess _      fp -> do debugM ("\tMake success : " ++ fp)
-                                    case ct of
-                                      CTController -> _loadController ct cmap cl fp
-                                      _            -> _loadView       ct cmap cl fp
+  case ct of
+    CTController -> _loadController ct cmap cl fp
+    _            -> _loadView       ct cmap cl fp
+
+    -- ms <- doIO $ makeAll fp (compileArgs++args)
+    -- case ms of
+    --     MakeFailure err       -> do debugM ("\tMake error : " ++ (show err)) 
+    --                                 return (insert cl (CodeLoadFailure $ unlines err) cmap)
+    --     MakeSuccess NotReq _  -> do debugM ("\tMake success : No recomp required") 
+    --                                 return cmap
+    --     MakeSuccess _      fp -> do debugM ("\tMake success : " ++ fp)
 
 _loadController :: CodeType -> CodeMap -> CodeLocation -> FilePath -> Controller CodeMap
 _loadController ct cmap cl fp = do
-    debugM ("loadController : " ++ (fst cl) ++ " : " ++ (snd cl))
-    ls <- doIO $ load_ fp [compiledDir] (snd cl)
-    case ls of 
-        LoadFailure err -> do debugM ("LoadFailure : " ++ (show err)) 
-                              return (insert cl (CodeLoadFailure $ unlines err) cmap)
-        LoadSuccess m f -> do debugM ("LoadSuccess : " ++ fst cl )
-                              doIO $ unload m
-                              t <- doIO $ getClockTime
-                              return (insert cl (CodeLoadController f m t) cmap)
+  debugM ("loadController : "++ fp  ++ " : "  ++ (fst cl) ++ " : " ++ (snd cl))
+  debugM ("LoadSuccess : " ++ fst cl )           
+  return cmap
+
+  
+
+    -- return (insert cl (CodeLoadController f m t) cmap)
+    -- ls <- doIO $ load_ fp [compiledDir] (snd cl)
+    -- case ls of 
+    --     LoadFailure err -> do debugM ("LoadFailure : " ++ (show err)) 
+    --                           return (insert cl (CodeLoadFailure $ unlines err) cmap)
+    --     LoadSuccess m f -> do debugM ("LoadSuccess : " ++ fst cl )
+    --                           doIO $ unload m
+    --                           t <- doIO $ getClockTime
+    --                           return (insert cl (CodeLoadController f m t) cmap)
 
 _loadView :: CodeType -> CodeMap -> CodeLocation -> FilePath -> Controller CodeMap
 _loadView ct cmap cl fp = do
     debugM ("loadView : " ++ (fst cl) ++ " : " ++ (snd cl))
-    ls <- doIO $ load_ fp (compiledDir:searchDirs) (snd cl)
-    case ls of 
-        LoadFailure err -> do debugM ("\tLoadFailure : " ++ (show err)) 
-                              return (insert cl (CodeLoadFailure $ unlines err) cmap)
-        LoadSuccess m f -> do debugM ("\tLoadSuccess : " ++ fst cl )
-                              doIO $ unload m
-                              t <- doIO $ getClockTime
-                              return (insert cl (CodeLoadView  f m t) cmap)
+    debugM ("LoadSuccess : " ++ fst cl )           
+--       func <- runGhc (Just libdir) $ do 
+--                 m <- moduleM "Test.hs" "Test"
+--                 f::String -> IO () <- (functionByNameM f m )
+--                 return f
+
+    return cmap
+
+    -- ls <- doIO $ load_ fp (compiledDir:searchDirs) (snd cl)
+    -- case ls of 
+    --     LoadFailure err -> do debugM ("\tLoadFailure : " ++ (show err)) 
+    --                           return (insert cl (CodeLoadFailure $ unlines err) cmap)
+    --     LoadSuccess m f -> do debugM ("\tLoadSuccess : " ++ fst cl )
+    --                           doIO $ unload m
+    --                           t <- doIO $ getClockTime
+    --                           return (insert cl (CodeLoadView  f m t) cmap)
 
 
 -------------------------------------------------------------------------------------------------
 -- Utility functions
 -------------------------------------------------------------------------------------------------
 
+--- Loads the module from the given path and given name 
+--- within the GhcMonad.
+--                       Path      Module   
+moduleM :: GhcMonad m => String -> String -> m Module
+moduleM p mod = do 
+  dflags <- getSessionDynFlags
+  setSessionDynFlags dflags
+  target <- guessTarget p Nothing
+  addTarget target
+  r <- load LoadAllTargets
+  case r of
+    Failed -> error "Compilation failed"
+    Succeeded -> do
+           findModule (mkModuleName mod) Nothing
+
+
+
+--- Loads the function in the given module 
+--- within the GhcMonad.
+--- Any alternative to unsafeCoerce?
+functionByNameM :: GhcMonad m => String -> Module -> m (a)
+functionByNameM name mod = do
+  setContext [] [mod]
+  f <- compileExpr (name)
+  do let value' = (unsafeCoerce f) :: a
+     return value'
+
+
+controller :: IO ()
+controller = 
+    defaultErrorHandler defaultDynFlags $ do
+      func <- runGhc (Just libdir) $ do 
+                m <- moduleM "Test.hs" "Test"
+                f::String -> IO () <- (functionByNameM "f" m )
+                return f
+      func "Hello"
+
+
+
+-- We are not generating .o files. So this is not going to be necessary
+
 -- Custom merge function because I don't want to have to use a custom
 -- version of Plugins (with HSX enabled)
-customMergeToDir :: FilePath -> FilePath -> FilePath -> Controller MergeStatus
-customMergeToDir stb src dir = do
-    src_exists <- doIO $ doesFileExist src
-    stb_exists <- doIO $ doesFileExist stb
-    let outFile = joinPath [dir, src]
-        outDir  = joinPath $ init $ splitDirectories outFile
-        outMod  = concat $ intersperse "." $ splitDirectories $ dropExtension src
-        outTitle = "module " ++ outMod ++ " where \n\n"
-    case (src_exists, stb_exists) of
-        (False, _) -> return $ 
-                MergeFailure ["Source file does not exist : "++src]
-        (_, False) -> return $ 
-                MergeFailure ["Source file does not exist : "++stb]
-        _          -> do
-                src_str <- doIO $ readFile src
-                stb_str <- doIO $ readFile stb
-                let (stbimps, stbdecls) = span ( not . isPrefixOf "-- SPLIT HERE") $ lines stb_str
-                    mrg_str = outTitle ++ (unlines stbimps) ++ src_str ++ (unlines stbdecls)
-                doIO $ createDirectoryIfMissing True outDir
-                hdl <- doIO $ openFile outFile WriteMode  -- overwrite!
-                doIO $ hPutStr hdl mrg_str 
-                doIO $ hClose hdl
-                return $ MergeSuccess ReComp [] outFile -- must have recreated file
+-- customMergeToDir :: FilePath -> FilePath -> FilePath -> Controller MergeStatus
+-- customMergeToDir stb src dir = do
+--     src_exists <- doIO $ doesFileExist src
+--     stb_exists <- doIO $ doesFileExist stb
+--     let outFile = joinPath [dir, src]
+--         outDir  = joinPath $ init $ splitDirectories outFile
+--         outMod  = concat $ intersperse "." $ splitDirectories $ dropExtension src
+--         outTitle = "module " ++ outMod ++ " where \n\n"
+--     case (src_exists, stb_exists) of
+--         (False, _) -> return $ 
+--                 MergeFailure ["Source file does not exist : "++src]
+--         (_, False) -> return $ 
+--                 MergeFailure ["Source file does not exist : "++stb]
+--         _          -> do
+--                 src_str <- doIO $ readFile src
+--                 stb_str <- doIO $ readFile stb
+--                 let (stbimps, stbdecls) = span ( not . isPrefixOf "-- SPLIT HERE") $ lines stb_str
+--                     mrg_str = outTitle ++ (unlines stbimps) ++ src_str ++ (unlines stbdecls)
+--                 doIO $ createDirectoryIfMissing True outDir
+--                 hdl <- doIO $ openFile outFile WriteMode  -- overwrite!
+--                 doIO $ hPutStr hdl mrg_str 
+--                 doIO $ hClose hdl
+--                 return $ MergeSuccess ReComp [] outFile -- must have recreated file
  
 
 needReloadCode :: FilePath -> CodeDate -> Controller Bool
