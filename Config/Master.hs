@@ -43,4 +43,4 @@ configDir = "Config"
 staticDirs = ["static", "tmp/cache"]
 compiledDir = "tmp/compiled"
 
-rootDir = "./"
+rootDir = "../turbinado-website/"

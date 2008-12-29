@@ -12,13 +12,15 @@ Cabal-Version:          >= 1.2
 
 Executable trhaml
   Main-is:             Turbinado/View/HAML/trhaml.hs
-  Build-Depends:       base  < 4.0,
+  Build-Depends:       base,
                        parsec 
   ghc-options:  -O
 
 Executable turbinado
   Main-is:             Turbinado/Server.hs
-  Build-Depends:       base <4.0, 
+  Build-Depends:       ghc,
+                       ghc-paths,
+                       base, 
                        containers, 
                        directory, 
                        filepath, 
@@ -26,7 +28,7 @@ Executable turbinado
                        HDBC, 
                        HDBC-postgresql, 
                        hslogger, 
-                       hsx == 0.4.5, 
+                       hsx >= 0.4.5, 
                        HTTP < 4000, 
                        mtl, 
                        network, 
@@ -53,7 +55,7 @@ Executable turbinado
             UndecidableInstances,
             PatternGuards,
             MultiParamTypeClasses,
-            PatternSignatures,
+            ScopedTypeVariables,
             DeriveDataTypeable
 
 
