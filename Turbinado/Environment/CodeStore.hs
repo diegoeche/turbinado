@@ -42,7 +42,7 @@ retrieveCode ct cl' = do
     let (CodeStore mv) = fromJust $ getCodeStore e
         path  = getDir ct
     cl <- do -- d <- getCurrentDirectory 
-             return (addExtension (joinPath $ map normalise [{- d, -} path, dropExtension $ fst cl']) "hs", snd cl')
+          return (addExtension (joinPath $ map normalise [{- d, -} path, dropExtension $ fst cl']) "hs", snd cl')
     debugM $ "  CodeStore : retrieveCode : loading   " ++ (fst cl) ++ " - " ++ (snd cl)
     cmap <- liftIO $ takeMVar mv
     let c= lookup cl cmap
@@ -113,6 +113,7 @@ mergeCode ct cmap cl = do
 makeCode :: (HasEnvironment m) => CodeType -> CodeMap -> CodeLocation -> [Arg] -> FilePath -> m CodeMap
 makeCode ct cmap cl args fp = do
     ms <- liftIO $ makeAll fp (compileArgs++args)
+    debugM ("\tMaking: " ++ (fp)) 
     case ms of
         MakeFailure err       -> do debugM ("\tMake error : " ++ (show err)) 
                                     return (insert cl (CodeLoadFailure $ unlines err) cmap)
@@ -168,10 +169,12 @@ customMergeToDir :: (HasEnvironment m) => FilePath -> FilePath -> FilePath -> m 
 customMergeToDir stb src dir = do
     src_exists <- liftIO $ doesFileExist src
     stb_exists <- liftIO $ doesFileExist stb
-    let outFile = joinPath [dir, src]
+    debugM  $ "\tMerging': " ++ (show [dir, makeRelative rootDir src])
+    let src' = makeRelative rootDir src
+        outFile = joinPath [combine rootDir dir, src']
         outDir  = joinPath $ init $ splitDirectories outFile
-        outMod  = concat $ intersperse "." $ splitDirectories $ dropExtension src
-        outTitle = "module " ++ outMod ++ " where \n\n"
+        outMod  = concat $ intersperse "." $ splitDirectories $ dropExtension src'
+        outTitle = "module " ++ outMod ++ " where \n\n"    
     case (src_exists, stb_exists) of
         (False, _) -> return $ 
                 MergeFailure ["Source file does not exist : "++src]
@@ -198,12 +201,14 @@ needReloadCode fp fd = do
         False-> return (False, True)
 
 getDir :: CodeType -> FilePath
-getDir ct = case ct of
-  CTLayout         -> layoutDir
-  CTController     -> controllerDir
-  CTView           -> viewDir
-  CTComponentController -> componentControllerDir
-  CTComponentView       -> componentViewDir
+getDir ct = 
+    let dir = case ct of
+                CTLayout         -> layoutDir
+                CTController     -> controllerDir
+                CTView           -> viewDir
+                CTComponentController -> componentControllerDir
+                CTComponentView       -> componentViewDir
+    in combine rootDir dir  
 
 getStub :: CodeType -> FilePath
 getStub ct = case ct of

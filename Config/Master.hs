@@ -38,7 +38,8 @@ componentViewStub       = "Turbinado/Stubs/ComponentView.hs"
 componentControllerDir  = "App/Components/Controllers"
 componentControllerStub = "Turbinado/Stubs/ComponentController.hs"
 
-configDir = "Config"
+-- Not being used?
+-- configDir = "Config"
 
 staticDirs = ["static", "tmp/cache"]
 compiledDir = "tmp/compiled"
